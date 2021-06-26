@@ -1,0 +1,165 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+### Module 2 Assignment 2
+### Tiffany Morris
+
+
+```{r}
+#install.packages("tidyverse")
+#install.packages("tidymodels")
+#install.packages("GGally")
+#install.packages("ggcorrplot") 
+#install.packages("gridExtra") 
+#install.packages("glmnet")
+#install.packages("MASS")
+#install.packages("car")
+#install.packages("lubridate")
+#install.packages("lmtest")
+```
+
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(ggcorrplot) 
+library(gridExtra) 
+library(glmnet)
+library(MASS)
+library(car)
+library(lubridate)
+library(lmtest)
+```
+
+```{r}
+bike <- read_csv("bike_cleaned.csv")
+bike = bike%>% 
+  mutate(dteday =mdy(dteday)) %>%
+  mutate_if(is.character, as.factor) %>%
+  mutate(hr = as_factor(hr))
+```
+
+**Why do we convert the “hr” variable into factor? Why not just leave as numbers?** 
+
+In order to make hr a categorical variable.
+
+```{r}
+ggcorr(bike, label = "TRUE", label_round = 2)
+```
+
+**Which of the quantitative variables appears to be best correlated with “count” (ignore the “registered”and “casual” variable as the sum of these two variables equals “count”)?**
+
+Atemp and temp are best correlated with count. 
+
+```{r}
+ggplot(bike,aes(x=hr,y=count))+ geom_boxplot()+ theme_bw()
+ggplot(bike,aes(x=dteday,y=count))+ geom_boxplot()+ theme_bw()
+ggplot(bike,aes(x=season,y=count))+ geom_boxplot()+ theme_bw()
+ggplot(bike,aes(x=mnth,y=count))+ geom_boxplot()+ theme_bw()
+ggplot(bike,aes(x=holiday,y=count))+ geom_boxplot()+ theme_bw()
+ggplot(bike,aes(x=weekday,y=count))+ geom_boxplot()+ theme_bw()
+ggplot(bike,aes(x=workingday,y=count))+ geom_boxplot()+ theme_bw()
+ggplot(bike,aes(x=weathersit,y=count))+ geom_boxplot()+ theme_bw()
+```
+
+**Which variables appear to affect“count”? Provide a brief explanation as to why you believe that each variable does or does not affect “count”.**
+
+Weathersit affects count, when there is no to little precipitation count is higher - likely no one wants to ride a bike in wet weather. Season affects count, in the Winter, count decreases - likely no one wants to ride a bike in cold weather. Holiday affects count, count is higher when there is not a holiday - likely no commuting on holidays so less bike usage. Weekday affects count, lower count on weekend days (saturday and sunday) - likely no commute on weekends. Workingday affects count, higher count on workingday - likely more commuting on a work day versus non work day. Mnth affects count, lower counts in cooler, colder months - likely due to weather. Dteday has no effect on count, likely because the combined view of counts is similar over time. 
+
+```{r}
+bike_simple = recipe(count ~ hr, bike)
+
+lm_model = #give the model type a name 
+  linear_reg() %>% #specify that we are doing linear regression
+  set_engine("lm") #specify the specify type of linear tool we want to use 
+
+lm_wflow = 
+  workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(bike_simple)
+
+lm_fit = fit(lm_wflow, bike)
+```
+
+
+```{r}
+summary(lm_fit$fit$fit$fit)
+```
+
+**Comment on the quality of the model.**
+
+When using hr as a predictor, the model appears to be decent quality with only knowing the R-squared value of 0.5015.
+
+```{r}
+bike_recipe = recipe(count ~. , bike) %>%
+  step_rm(instant,dteday, registered, casual) %>%
+  step_dummy(all_nominal()) %>% 
+  step_center(all_predictors()) %>% #centers the predictors
+  step_scale(all_predictors()) #scales the predictors
+
+ridge_model = #give the model type a name 
+  linear_reg(mixture = 0) %>% #mixture = 1 sets up Lasso
+  set_engine("glmnet") #specify the specify type of linear tool we want to use 
+
+ridge_wflow = 
+  workflow() %>% 
+  add_model(ridge_model) %>% 
+  add_recipe(bike_recipe)
+
+ridge_fit = fit(ridge_wflow, bike)
+
+```
+
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit") 
+```
+
+
+
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 12) #show the coefficients for our selected lambda value
+```
+
+**I chose a lamba value of 12, r-squared of .6232. This model appears to be a good model, particularly because I believe we are dealing with multicollinearity. The ridge model does a good job driving predictors to close to zero.**
+
+```{r}
+bike_recipe = recipe(count ~. , bike) %>%
+  step_rm(instant,dteday, registered, casual) %>%
+  step_dummy(all_nominal()) %>% 
+  step_center(all_predictors()) %>% #centers the predictors
+  step_scale(all_predictors()) #scales the predictors
+
+lasso_model = #give the model type a name 
+  linear_reg(mixture = 1) %>% #mixture = 1 sets up Lasso
+  set_engine("glmnet") #specify the specify type of linear tool we want to use 
+
+lasso_wflow = 
+  workflow() %>% 
+  add_model(lasso_model) %>% 
+  add_recipe(bike_recipe)
+
+lasso_fit = fit(lasso_wflow, bike)
+```
+
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit") 
+```
+
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 1.777) #show the coefficients for our selected lambda value
+```
+
+**I chose a lamba value of 1.777, r-squared of .6213. This model appears to have driven 14 variables to zero and eliminating them as predictors. Those include workingday,weekday_wednesday, weathersit_misty, and mnth_december,feb,jan, and november, and others. **
